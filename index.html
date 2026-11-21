@@ -11,18 +11,19 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body data-kind="midi">
 <header id="bar">
   <a class="back" id="backLink" href="/">← Ianua</a>
   <div class="brand">Notula</div>
   <div class="spacer"></div>
   <button id="btnOpen" class="primary">Open MIDI</button>
+  <button id="btnStilus">Stilus song</button>
   <button id="btnProjects">Projects</button>
   <button id="btnPrint">Print / PDF</button>
   <button id="btnMenu" aria-label="More">⋯</button>
   <div id="menu" hidden>
     <button id="miExport">Export project (.json)</button>
-    <button id="miImport">Import project…</button>
+    <button id="miImport">Import project or Stilus file…</button>
     <button id="miAbout">About</button>
   </div>
 </header>
@@ -32,27 +33,34 @@
   <section id="controls">
     <label class="f wide">Title <input id="inTitle" type="text" autocomplete="off"></label>
     <label class="f">Artist <input id="inArtist" type="text" autocomplete="off"></label>
-    <label class="f">Track <select id="selTrack"></select></label>
-    <label class="f">Quantize
+    <label class="f midi-only">Track <select id="selTrack"></select></label>
+    <label class="f midi-only">Quantize
       <select id="selFeel">
         <option value="strict">Strict grid (clean)</option>
         <option value="natural">Natural (closer to played)</option>
       </select>
     </label>
-    <label class="f">Song key <select id="selKey"></select></label>
+    <label class="f midi-only">Song key <select id="selKey"></select></label>
     <div class="f">Transpose
       <div class="stepper"><button id="trDown" aria-label="Down a semitone">−</button><span id="trVal">0</span><button id="trUp" aria-label="Up a semitone">+</button></div>
     </div>
-    <label class="f">Clef
+    <label class="f midi-only">Clef
       <select id="selClef"><option value="auto">Auto</option><option value="treble">Treble</option><option value="bass">Bass</option></select>
     </label>
     <label class="f">Page
       <select id="selPage"><option value="letter">Letter</option><option value="a4">A4</option><option value="screen">Phone / screen (reflow)</option></select>
     </label>
-    <div class="f">Shift (16ths)
+    <div class="f midi-only">Shift (16ths)
       <div class="stepper"><button id="shDown" aria-label="Shift earlier">−</button><span id="shVal">0</span><button id="shUp" aria-label="Shift later">+</button></div>
     </div>
-    <label class="f chk"><input id="chkTrim" type="checkbox"> Trim empty bars at start</label>
+    <label class="f chk midi-only"><input id="chkTrim" type="checkbox"> Trim empty bars at start</label>
+    <label class="f chart-only">Show
+      <select id="selView"><option value="both">Chords over lyrics</option><option value="chords">Chords only</option><option value="lyrics">Lyrics only</option></select>
+    </label>
+    <label class="f chart-only">Columns
+      <select id="selCols"><option value="1">1</option><option value="2">2</option></select>
+    </label>
+    <label class="f chart-only">Move to key <select id="selChartKey"></select></label>
     <div class="f">Zoom
       <div class="stepper"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button><button id="zFit">Fit</button></div>
     </div>
@@ -60,6 +68,15 @@
 </details>
 
 <div id="infoBar"></div>
+<div id="transport" class="midi-only" hidden>
+  <button id="btnPlay" class="primary" aria-label="Play">▶ Play</button>
+  <button id="btnStop" aria-label="Stop">■ Stop</button>
+  <label class="tp">Tempo <input id="rngBpm" type="range" min="30" max="240" value="120"> <span id="bpmVal">120</span> BPM <button id="bpmReset" title="Back to the file's tempo">Reset</button></label>
+  <label class="tp">Play <select id="selPlay"><option value="chart">As engraved</option><option value="orig">Original MIDI</option></select></label>
+  <label class="tp chk"><input id="chkClick" type="checkbox"> Click</label>
+  <label class="tp">Volume <input id="rngVol" type="range" min="0" max="100" value="70"></label>
+  <span id="playHint" class="muted">Starts at the selected bar, or the beginning.</span>
+</div>
 <div id="barTools" hidden>
   <strong id="btLabel">Bar</strong>
   <button data-mark="repeatStart">|: Repeat start</button>
@@ -77,6 +94,12 @@
   <div id="projList"></div>
   <form method="dialog"><button>Close</button></form>
 </dialog>
+<dialog id="dlgSongs">
+  <h2>Pick a Stilus song</h2>
+  <input id="songFilter" type="text" placeholder="Search by title" autocomplete="off">
+  <div id="songList"></div>
+  <form method="dialog"><button>Cancel</button></form>
+</dialog>
 <dialog id="dlgAbout">
   <h2>Notula</h2>
   <p id="aboutText"></p>
@@ -85,6 +108,7 @@
 
 <input id="fileMidi" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
 <input id="fileProject" type="file" accept=".json,application/json" hidden>
+<input id="fileStilus" type="file" accept=".json,application/json" hidden>
 <div id="toast" role="status" hidden></div>
 <script type="module" src="js/main.js"></script>
 </body>

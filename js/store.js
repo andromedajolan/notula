@@ -52,7 +52,13 @@ export async function saveProject(p) {
   } catch (e) {
     try { localStorage.setItem(LS + p.id, JSON.stringify(p)); } catch (e2) { return false; }
   }
+  try { localStorage.removeItem(LS + p.id); } catch (e) { /* ignore */ }
   return true;
+}
+
+// Last-gasp copy for page close: IndexedDB writes can be cut off, localStorage is synchronous.
+export function saveProjectSync(p) {
+  try { p.updated = new Date().toISOString(); localStorage.setItem(LS + p.id, JSON.stringify(p)); return true; } catch (e) { return false; }
 }
 
 export async function loadProject(id) {
@@ -60,6 +66,9 @@ export async function loadProject(id) {
     const db = await openDb();
     const tx = db.transaction(['projects', 'prev'], 'readonly');
     let r = await wrap(tx.objectStore('projects').get(id));
+    let ls = null;
+    try { const raw = localStorage.getItem(LS + id); if (raw) { const x = JSON.parse(raw); if (validProject(x)) ls = x; } } catch (e) { /* none */ }
+    if (ls && (!validProject(r) || (ls.updated || '') > (r.updated || ''))) return ls;
     if (!validProject(r)) r = await wrap(tx.objectStore('prev').get(id));
     if (validProject(r)) return r;
   } catch (e) { /* fall through */ }
@@ -72,7 +81,10 @@ export async function listProjects() {
   try { const db = await openDb(); all = await wrap(db.transaction('projects').objectStore('projects').getAll()); } catch (e) { /* fallback below */ }
   const seen = new Set(all.map((p) => p.id));
   for (const p of lsList()) if (!seen.has(p.id)) all.push(p);
-  return all.filter(validProject).map((p) => ({ id: p.id, title: p.meta && p.meta.title || 'Untitled', updated: p.updated, bars: p.source && p.source.fileName || '' }))
+  return all.filter(validProject).map((p) => ({
+    id: p.id, title: p.meta && p.meta.title || 'Untitled', updated: p.updated, bars: p.source && p.source.fileName || '',
+    kind: p.source.kind === 'stilus' ? 'stilus' : 'midi', songId: p.songRef && p.songRef.id || '',
+  }))
     .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
 }
 
@@ -89,8 +101,12 @@ export async function deleteProject(id) {
 }
 
 export function validProject(p) {
-  return !!(p && p.format === 'notula-project' && typeof p.schema === 'number' && p.id && p.source && p.source.midiBase64);
+  return !!(p && p.format === 'notula-project' && typeof p.schema === 'number' && p.id && p.source
+    && (p.source.midiBase64 || (p.source.kind === 'stilus' && p.source.song && Array.isArray(p.source.song.sections))));
 }
+
+export const SCHEMA_MAX = 2;
+export const CHART_DEFAULTS = { view: 'both', columns: 1 };
 
 export function newId() { return 'np_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
@@ -107,14 +123,35 @@ export function newProject({ title, fileName, midiBase64, trackIndex, version })
   };
 }
 
+// A chord chart from a Stilus song. Needs schema 2 (source.kind "stilus"); MIDI projects stay schema 1.
+export function newStilusProject({ song, fileName, version }) {
+  const now = new Date().toISOString();
+  return {
+    format: 'notula-project', schema: 2, id: newId(),
+    created: now, updated: now, app: { name: 'Notula', version },
+    meta: { title: song.title || 'Untitled', artist: 'Andromeda Dunn', part: '' },
+    songRef: { id: song.id, title: song.title || '' },
+    source: { kind: 'stilus', fileName: fileName || '', song },
+    settings: { transpose: 0, page: 'letter', zoom: null, chart: { ...CHART_DEFAULTS } },
+    marks: {},
+  };
+}
+
 // accept a parsed JSON object; returns a clean project or throws
 export function importProjectObject(obj, existingIds) {
   if (!obj || obj.format !== 'notula-project') throw new Error('This is not a Notula project file.');
-  if (typeof obj.schema !== 'number' || obj.schema > 1) throw new Error('This project was saved by a newer version of Notula.');
-  if (!obj.source || !obj.source.midiBase64) throw new Error('The project has no MIDI data.');
+  if (typeof obj.schema !== 'number' || obj.schema > SCHEMA_MAX) throw new Error('This project was saved by a newer version of Notula.');
+  const isChart = obj.source && obj.source.kind === 'stilus';
+  if (!obj.source || (!isChart && !obj.source.midiBase64)) throw new Error('The project has no MIDI data.');
+  if (isChart && !(obj.source.song && Array.isArray(obj.source.song.sections))) throw new Error('The project has no Stilus song.');
   const p = JSON.parse(JSON.stringify(obj));
   p.meta = Object.assign({ title: 'Untitled', artist: '', part: '' }, p.meta || {});
-  p.settings = Object.assign({ feel: 'strict', trim: true, shift: 0, transpose: 0, clef: 'auto', keyOverride: null, page: 'letter', zoom: null }, p.settings || {});
+  if (isChart) {
+    p.settings = Object.assign({ transpose: 0, page: 'letter', zoom: null }, p.settings || {});
+    p.settings.chart = Object.assign({}, CHART_DEFAULTS, p.settings.chart || {});
+  } else {
+    p.settings = Object.assign({ feel: 'strict', trim: true, shift: 0, transpose: 0, clef: 'auto', keyOverride: null, page: 'letter', zoom: null }, p.settings || {});
+  }
   p.marks = p.marks || {};
   p.songRef = p.songRef || null;
   if (!p.id || (existingIds && existingIds.has(p.id))) {
