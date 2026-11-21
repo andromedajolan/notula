@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notula</title>
+<meta name="theme-color" content="#0b0b0c">
+<meta name="description" content="Notula: sheet music and tab for the Abditum suite. Works offline.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header id="bar">
+  <a class="back" id="backLink" href="/">← Ianua</a>
+  <div class="brand">Notula</div>
+  <div class="spacer"></div>
+  <button id="btnOpen" class="primary">Open MIDI</button>
+  <button id="btnProjects">Projects</button>
+  <button id="btnPrint">Print / PDF</button>
+  <button id="btnMenu" aria-label="More">⋯</button>
+  <div id="menu" hidden>
+    <button id="miExport">Export project (.json)</button>
+    <button id="miImport">Import project…</button>
+    <button id="miAbout">About</button>
+  </div>
+</header>
+
+<details id="controlsWrap" open>
+  <summary>Chart options</summary>
+  <section id="controls">
+    <label class="f wide">Title <input id="inTitle" type="text" autocomplete="off"></label>
+    <label class="f">Artist <input id="inArtist" type="text" autocomplete="off"></label>
+    <label class="f">Track <select id="selTrack"></select></label>
+    <label class="f">Quantize
+      <select id="selFeel">
+        <option value="strict">Strict grid (clean)</option>
+        <option value="natural">Natural (closer to played)</option>
+      </select>
+    </label>
+    <label class="f">Song key <select id="selKey"></select></label>
+    <div class="f">Transpose
+      <div class="stepper"><button id="trDown" aria-label="Down a semitone">−</button><span id="trVal">0</span><button id="trUp" aria-label="Up a semitone">+</button></div>
+    </div>
+    <label class="f">Clef
+      <select id="selClef"><option value="auto">Auto</option><option value="treble">Treble</option><option value="bass">Bass</option></select>
+    </label>
+    <label class="f">Page
+      <select id="selPage"><option value="letter">Letter</option><option value="a4">A4</option><option value="screen">Phone / screen (reflow)</option></select>
+    </label>
+    <div class="f">Shift (16ths)
+      <div class="stepper"><button id="shDown" aria-label="Shift earlier">−</button><span id="shVal">0</span><button id="shUp" aria-label="Shift later">+</button></div>
+    </div>
+    <label class="f chk"><input id="chkTrim" type="checkbox"> Trim empty bars at start</label>
+    <div class="f">Zoom
+      <div class="stepper"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button><button id="zFit">Fit</button></div>
+    </div>
+  </section>
+</details>
+
+<div id="infoBar"></div>
+<div id="barTools" hidden>
+  <strong id="btLabel">Bar</strong>
+  <button data-mark="repeatStart">|: Repeat start</button>
+  <button data-mark="repeatEnd">:| Repeat end</button>
+  <button data-mark="doubleBar">Double bar</button>
+  <button data-mark="label">Section label…</button>
+  <button data-mark="clear">Clear</button>
+  <button data-mark="close">Done</button>
+</div>
+
+<main id="view" tabindex="0"></main>
+
+<dialog id="dlgProjects">
+  <h2>Projects</h2>
+  <div id="projList"></div>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+<dialog id="dlgAbout">
+  <h2>Notula</h2>
+  <p id="aboutText"></p>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+
+<input id="fileMidi" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+<input id="fileProject" type="file" accept=".json,application/json" hidden>
+<div id="toast" role="status" hidden></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
