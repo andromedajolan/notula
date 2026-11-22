@@ -125,14 +125,16 @@ export function parseMidi(input) {
 }
 
 // Minimal Format 0 writer: notes [{t,d,p,v}] in ticks.
-export function writeMidi({ ppq = 480, bpm = 120, num = 4, den = 4, notes = [], name = 'Notula', channel = 0, program = 0 }) {
+export function writeMidi({ ppq = 480, bpm = 120, num = 4, den = 4, notes = [], name = 'Notula', channel = 0, program = 0, tempos = null, timeSigs = null, sf = null, minor = false }) {
   const out = [];
   const push = (...a) => { for (const x of a) out.push(x & 0xff); };
   const varlen = (v) => { const b = [v & 0x7f]; v >>= 7; while (v > 0) { b.unshift((v & 0x7f) | 0x80); v >>= 7; } return b; };
   const ev = [];
-  const us = Math.round(60000000 / bpm);
-  ev.push({ t: 0, o: 0, b: [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] });
-  ev.push({ t: 0, o: 0, b: [0xff, 0x58, 4, num, Math.log2(den), 24, 8] });
+  const tl = tempos && tempos.length ? tempos : [{ t: 0, bpm }];
+  for (const e of tl) { const us = Math.round(60000000 / Math.max(1, e.bpm)); ev.push({ t: Math.round(e.t), o: 0, b: [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255] }); }
+  const sl = timeSigs && timeSigs.length ? timeSigs : [{ t: 0, num, den }];
+  for (const e of sl) ev.push({ t: Math.round(e.t), o: 0, b: [0xff, 0x58, 4, e.num, Math.log2(e.den), 24, 8] });
+  if (sf !== null) ev.push({ t: 0, o: 0, b: [0xff, 0x59, 2, sf & 0xff, minor ? 1 : 0] });
   const nb = [...name].map((c) => c.charCodeAt(0) & 127);
   ev.push({ t: 0, o: 0, b: [0xff, 0x03, nb.length, ...nb] });
   ev.push({ t: 0, o: 0, b: [0xc0 | channel, program] });

@@ -1,15 +1,19 @@
 // Notula: page layout and SVG engraving of a score model.
 import * as G from './glyphs.js';
+import { prettyChord } from './chords.js';
+import { keyAccidentals, NAT_PC } from './theory.js';
 
 export const SP_IN = 0.072;     // inches per staff space
 export const SYS_TOP = 6;       // room above the staff (tempo, labels, high notes)
 export const SYS_H = 14;        // sp, total height of one system
 export const SYS_GAP = 1.6;
 const PAD_L = 1.3, PAD_R = 1.0;
+export const CHORD_ROW = 3.4, LYR_ROW = 3.6, TAB_SP = 1.0;
 const CLEF_W = { treble: 4.2, bass: 5.6 };
 const MARGIN_X = 0.6, MARGIN_Y = 0.55;
 export const HEADER_IN = 1.05;  // title block on page 1 (inches)
 
+const lyrW = (t) => t.length * 0.88 + 1.0;
 const noteW = (dur) => Math.max(2.4, 2.9 + 1.25 * Math.log2(dur / 12));
 
 function measureMetrics(m) {
@@ -25,7 +29,8 @@ function measureMetrics(m) {
   else {
     for (const it of m.items) {
       const lead = it.kind === 'note' && it.acc != null ? 1.55 : 0;
-      const w = noteW(it.dur) + (it.dots ? 0.7 : 0);
+      let w = noteW(it.dur) + (it.dots ? 0.7 : 0);
+      if (it.lyr) w = Math.max(w, lyrW(it.lyr) / 0.8);
       items.push({ lead, w });
       fixed += lead; space += w;
     }
@@ -42,6 +47,10 @@ export function layoutScore(score, opt) {
   const clefW = CLEF_W[score.clef] || 4.2;
   const headerW = clefW + keyW;
   const metrics = score.measures.map(measureMetrics);
+  const top = SYS_TOP + (score.chordRow ? CHORD_ROW : 0);
+  const tabN = score.tabInfo ? score.tabInfo.strings : 0;
+  const tabTop = top + 8.4 + (score.lyricRow ? LYR_ROW : 0);
+  const sysH = tabN ? tabTop + (tabN - 1) * TAB_SP + 1.6 : top + 8 + (score.lyricRow ? LYR_ROW : 0);
   const systems = [];
   let cur = null, used = 0;
   score.measures.forEach((m, i) => {
@@ -69,28 +78,30 @@ export function layoutScore(score, opt) {
       x += W;
       return geo;
     });
-    out.push({ index: si, ms, endX: x, headerW, contentW });
+    out.push({ index: si, ms, endX: x, headerW, contentW, top, h: sysH, tabTop: tabN ? tabTop : null });
   });
   // pages
   const pageContentH = (pageH - 2 * my) / SP_IN;
   const pages = [];
   let page = { systems: [] }, h = HEADER_IN / SP_IN;
   for (const sy of out) {
-    if (!opt.single && page.systems.length && h + SYS_H > pageContentH) { pages.push(page); page = { systems: [] }; h = 0; }
-    page.systems.push(sy); h += SYS_H + SYS_GAP;
+    if (!opt.single && page.systems.length && h + sysH > pageContentH) { pages.push(page); page = { systems: [] }; h = 0; }
+    page.systems.push(sy); h += sysH + SYS_GAP;
   }
   pages.push(page);
-  return { systems: out, pages, contentW, pageW, pageH, marginX: mx, marginY: my };
+  return { systems: out, pages, sysH, contentW, pageW, pageH, marginX: mx, marginY: my };
 }
 
 const fx = (n) => (Math.round(n * 100) / 100);
 
 export function renderSystem(score, sys, state = {}) {
-  const y0 = SYS_TOP;
+  const y0 = sys.top != null ? sys.top : SYS_TOP;
+  const yl = SYS_TOP;                  // tempo and labels stay at the top edge, chords sit between them and the staff
   const sel = state.selectedBar;
+  const selNote = state.selNote || null;
   const clef = score.clef;
   const yOf = (dpos) => y0 + 4 - (dpos - (clef === 'bass' ? 18 : 30)) / 2;
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fx(sys.contentW)} ${SYS_H}" preserveAspectRatio="xMinYMin meet" fill="#000" stroke="none">`;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fx(sys.contentW)} ${sys.h || SYS_H}" preserveAspectRatio="xMinYMin meet" fill="#000" stroke="none">`;
   // staff
   let lines = '';
   for (let i = 0; i < 5; i++) lines += `M0 ${y0 + i}H${fx(sys.endX)}`;
@@ -99,14 +110,14 @@ export function renderSystem(score, sys, state = {}) {
   s += clef === 'bass' ? G.bassClef(0.7, y0) : G.trebleClef(0.9, y0);
   s += G.keySig(score.key.sf, CLEF_W[clef] || 4.2, y0, clef);
   const first = sys.ms[0].m;
-  s += `<text x="0.3" y="${y0 - 1.1}" font-size="1.7" font-family="Georgia,serif" font-style="italic" fill="#000">${first.num}</text>`;
+  s += `<text x="0.3" y="${yl - 1.1}" font-size="1.7" font-family="Georgia,serif" font-style="italic" fill="#000">${first.num}</text>`;
 
   const allItems = [];
   sys.ms.forEach((g, gi) => {
     const m = g.m, xs = g.x, xe = g.x + g.W;
     const isLast = gi === sys.ms.length - 1 && sys.index === state.lastSystem;
     const mk = m.marks || {};
-    s += `<rect data-bar="${m.idx}" x="${fx(xs)}" y="${y0 - 5}" width="${fx(g.W)}" height="14" fill="${sel === m.idx ? 'rgba(46,204,113,0.16)' : 'transparent'}"/>`;
+    s += `<rect data-bar="${m.idx}" x="${fx(xs)}" y="0" width="${fx(g.W)}" height="${sys.h || SYS_H}" fill="${sel === m.idx ? 'rgba(46,204,113,0.16)' : 'transparent'}"/>`;
     // time signature
     let cx0 = xs + 0.9;
     if (mk.repeatStart) {
@@ -119,12 +130,12 @@ export function renderSystem(score, sys, state = {}) {
     let tx = xs + (mk.repeatStart ? 2.4 : 0) + 0.6;
     if (mk.label) {
       const lw = Math.max(2.4, mk.label.length * 1.15 + 1.2);
-      s += `<rect x="${fx(tx)}" y="${y0 - 6}" width="${fx(lw)}" height="2.1" fill="none" stroke="#000" stroke-width="0.12"/>`
-        + `<text x="${fx(tx + 0.6)}" y="${y0 - 4.5}" font-size="1.45" font-weight="bold" font-family="Arial,Helvetica,sans-serif" fill="#000">${esc(mk.label)}</text>`;
+      s += `<rect x="${fx(tx)}"  y="${yl - 6}" width="${fx(lw)}" height="2.1" fill="none" stroke="#000" stroke-width="0.12"/>`
+        + `<text x="${fx(tx + 0.6)}" y="${yl - 4.5}" font-size="1.45" font-weight="bold" font-family="Arial,Helvetica,sans-serif" fill="#000">${esc(mk.label)}</text>`;
     }
     if (m.tempo != null) {
-      s += G.quarterSymbol(fx(tx + 0.7), y0 - 2.2);
-      s += `<text x="${fx(tx + 1.9)}" y="${y0 - 2.0}" font-size="1.6" font-family="Arial,Helvetica,sans-serif" fill="#000">= ${m.tempo}</text>`;
+      s += G.quarterSymbol(fx(tx + 0.7), yl - 2.2);
+      s += `<text x="${fx(tx + 1.9)}" y="${yl - 2.0}" font-size="1.6" font-family="Arial,Helvetica,sans-serif" fill="#000">= ${m.tempo}</text>`;
     }
     // content
     if (m.multi) {
@@ -135,7 +146,13 @@ export function renderSystem(score, sys, state = {}) {
     } else if (g.items.length === 1 && g.items[0].it.whole) {
       s += G.restGlyph(192, 0, fx(xs + g.W / 2 + (m.showTs ? 1.3 : 0)), y0);
     } else {
-      s += renderItems(g, y0, yOf, clef, allItems, m);
+      s += renderItems(g, y0, yOf, clef, allItems, m, selNote);
+    }
+    // chord symbols
+    for (const c of score.chords || []) {
+      if (c.u < m.start - 1e-6 || c.u >= m.start + (m.multi || 1) * m.len - 1e-6) continue;
+      const cxp = xOfUnit(g, c.u);
+      s += `<text x="${fx(cxp - 0.1)}" y="${fx(y0 - 2.9)}" font-size="1.95" font-weight="bold" font-family="Arial,Helvetica,sans-serif" fill="#000">${esc(prettyChord(c.t))}</text>`;
     }
     // barline
     if (isLast) {
@@ -151,13 +168,37 @@ export function renderSystem(score, sys, state = {}) {
   });
   // ties
   s += renderTies(allItems, sys, y0, yOf);
+  if (score.tabInfo && sys.tabTop != null) s += renderTab(score, sys, allItems);
   s += '</svg>';
+  return s;
+}
+
+function renderTab(score, sys, allItems) {
+  const n = score.tabInfo.strings, y1 = sys.tabTop, y2 = y1 + (n - 1) * TAB_SP;
+  let s = '';
+  let lines = '';
+  for (let i = 0; i < n; i++) lines += `M0 ${fx(y1 + i * TAB_SP)}H${fx(sys.endX)}`;
+  s += `<path d="${lines}" stroke="#000" stroke-width="0.11" fill="none"/>`;
+  let bars = `M0.05 ${fx(y1)}V${fx(y2)}`;
+  sys.ms.forEach((g) => { bars += `M${fx(g.x + g.W)} ${fx(y1)}V${fx(y2)}`; });
+  s += `<path d="${bars}" stroke="#000" stroke-width="0.12" fill="none"/>`;
+  const mid = (y1 + y2) / 2, fs = Math.min(1.9, (y2 - y1) / 3.2 + 0.6);
+  ['T', 'A', 'B'].forEach((ch, i) => { s += `<text x="1.9" y="${fx(mid + (i - 1) * fs * 1.05 + fs * 0.36)}" font-size="${fx(fs)}" font-weight="bold" font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="#000">${ch}</text>`; });
+  for (const q of allItems) {
+    const t = q.it.tab;
+    if (!t) continue;
+    const y = t.s >= 0 ? y2 - t.s * TAB_SP : mid;
+    const txt = t.s >= 0 ? String(t.f) : '?';
+    const w = txt.length > 1 ? 1.5 : 1.0;
+    s += `<rect x="${fx(q.cx - w / 2 - 0.1)}" y="${fx(y - 0.55)}" width="${fx(w + 0.2)}" height="1.1" fill="#fff"/>`;
+    s += `<text x="${fx(q.cx)}" y="${fx(y + 0.5)}" font-size="1.5" font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="#000">${txt}</text>`;
+  }
   return s;
 }
 
 function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-function renderItems(g, y0, yOf, clef, allItems, m) {
+function renderItems(g, y0, yOf, clef, allItems, m, selNote) {
   let s = '';
   const items = g.items;
   // stem directions & geometry
@@ -186,6 +227,8 @@ function renderItems(g, y0, yOf, clef, allItems, m) {
     if (led) s += `<path d="${led}" stroke="#000" stroke-width="0.12" fill="none"/>`;
     if (it.acc != null) s += G.accidental(it.acc, fx(n.q.x - 0.85), fx(y));
     s += G.head(it.base, fx(cx), fx(y));
+    if (selNote && it.pitch === selNote.p && m.start + it.pos >= selNote.u - 1e-6 && m.start + it.pos < selNote.e - 1e-6) s += `<circle cx="${fx(cx)}" cy="${fx(y)}" r="1.15" fill="rgba(31,168,90,0.18)" stroke="#1fa85a" stroke-width="0.22"/>`;
+    if (it.lyr) s += `<text x="${fx(n.q.x - 0.15)}" y="${fx(y0 + 9.4)}" font-size="1.7" font-family="Arial,Helvetica,sans-serif" fill="#000">${esc(it.lyr)}</text>`;
     if (it.dots) { const dy = Math.abs((y - y0) % 1) < 0.01 ? y - 0.5 : y; s += `<circle cx="${fx(cx + 1.15)}" cy="${fx(dy)}" r="0.23"/>`; }
   }
   // stems, flags, beams
@@ -290,3 +333,24 @@ function renderTies(all, sys, y0, yOf) {
   }
   return s;
 }
+
+// x position (staff spaces) of a time position inside a laid-out measure
+export function xOfUnit(g, u) {
+  const m = g.m, nb = m.multi || 1;
+  const a = g.x + g.padL, b = g.x + g.W - g.padR;
+  if (nb > 1 || !g.items.length || (g.items.length === 1 && g.items[0].it.whole)) return a + (b - a) * Math.max(0, Math.min(1, (u - m.start) / (nb * m.len)));
+  const pts = [{ pos: 0, x: a }];
+  for (const q of g.items) {
+    const ps = q.it.pos;
+    if (ps > pts[pts.length - 1].pos + 1e-6) pts.push({ pos: ps, x: q.x });
+    else if (ps === 0) pts[0] = { pos: 0, x: q.x };
+  }
+  if (m.len > pts[pts.length - 1].pos) pts.push({ pos: m.len, x: b });
+  const rel = u - m.start;
+  for (let i = 1; i < pts.length; i++) {
+    if (rel < pts[i].pos) { const f = (rel - pts[i - 1].pos) / (pts[i].pos - pts[i - 1].pos); return pts[i - 1].x + f * (pts[i].x - pts[i - 1].x); }
+  }
+  return pts[pts.length - 1].x;
+}
+export function staffY(clef, y0, dpos) { return y0 + 4 - (dpos - (clef === 'bass' ? 18 : 30)) / 2; }
+export function dposFromY(clef, y0, y) { return (clef === 'bass' ? 18 : 30) + Math.round((y0 + 4 - y) * 2); }

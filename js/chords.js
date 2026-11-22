@@ -6,7 +6,7 @@ const FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 // semitones from a mode's tonic up to its relative major (decides flat vs sharp spelling)
-const REL_MAJOR = { major: 0, minor: 3, dorian: 10, phrygian: 8, lydian: 7, mixolydian: 5, locrian: 1 };
+export const REL_MAJOR = { major: 0, minor: 3, dorian: 10, phrygian: 8, lydian: 7, mixolydian: 5, locrian: 1 };
 export const KEYS = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
 export const MODES = ['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'locrian'];
 

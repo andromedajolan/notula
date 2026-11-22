@@ -18,10 +18,14 @@
   <div class="spacer"></div>
   <button id="btnOpen" class="primary">Open MIDI</button>
   <button id="btnStilus">Stilus song</button>
+  <button id="btnEdit" class="midi-only" aria-pressed="false">✎ Edit</button>
   <button id="btnProjects">Projects</button>
   <button id="btnPrint">Print / PDF</button>
   <button id="btnMenu" aria-label="More">⋯</button>
   <div id="menu" hidden>
+    <button id="miNew">New blank score</button>
+    <button id="miMidi" class="midi-only">Export MIDI (.mid)</button>
+    <button id="miRevert" class="midi-only" hidden>Discard my edits (back to the MIDI)</button>
     <button id="miExport">Export project (.json)</button>
     <button id="miImport">Import project or Stilus file…</button>
     <button id="miAbout">About</button>
@@ -41,6 +45,8 @@
       </select>
     </label>
     <label class="f midi-only">Song key <select id="selKey"></select></label>
+    <label class="f midi-only">Tab <select id="selTab"></select></label>
+    <label class="f midi-only">Fret position <select id="selTabPos"></select></label>
     <div class="f">Transpose
       <div class="stepper"><button id="trDown" aria-label="Down a semitone">−</button><span id="trVal">0</span><button id="trUp" aria-label="Up a semitone">+</button></div>
     </div>
@@ -61,6 +67,7 @@
       <select id="selCols"><option value="1">1</option><option value="2">2</option></select>
     </label>
     <label class="f chart-only">Move to key <select id="selChartKey"></select></label>
+    <div class="f chart-only"><button id="btnLead" title="Start a blank score with this song's key, tempo, lyrics and chords">Make lead sheet</button></div>
     <div class="f">Zoom
       <div class="stepper"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button><button id="zFit">Fit</button></div>
     </div>
@@ -76,6 +83,22 @@
   <label class="tp chk"><input id="chkClick" type="checkbox"> Click</label>
   <label class="tp">Volume <input id="rngVol" type="range" min="0" max="100" value="70"></label>
   <span id="playHint" class="muted">Starts at the selected bar, or the beginning.</span>
+</div>
+<div id="editBar" class="midi-only" hidden>
+  <div class="eb"><span class="lab">Click the staff to</span>
+    <button data-tool="note" class="on">Add note</button><button data-tool="rest">Add rest</button><button data-tool="chord">Chord symbol</button></div>
+  <div class="eb"><span class="lab">Length</span>
+    <button data-dur="192">1</button><button data-dur="96">1/2</button><button data-dur="48" class="on">1/4</button><button data-dur="24">1/8</button><button data-dur="12">1/16</button>
+    <button id="ebDot">Dotted</button><button id="ebTrip">Triplet</button></div>
+  <div class="eb"><span class="lab">Selected note</span>
+    <button id="ebUp" title="Up a semitone (Up arrow)">Up ♯</button><button id="ebDown" title="Down a semitone (Down arrow)">Down ♭</button>
+    <button id="ebOctUp" title="Up an octave (Shift+Up)">8va ▲</button><button id="ebOctDown" title="Down an octave (Shift+Down)">8va ▼</button>
+    <button id="ebLeft" title="Earlier (Left arrow)">◀</button><button id="ebRight" title="Later (Right arrow)">▶</button>
+    <button id="ebDel" title="Delete or Backspace">Delete</button></div>
+  <div class="eb"><button id="ebUndo" title="Ctrl+Z">Undo</button><button id="ebRedo" title="Ctrl+Y">Redo</button>
+    <label class="f">Time <select id="ebTs"><option>4/4</option><option>3/4</option><option>2/4</option><option>5/4</option><option>6/8</option><option>9/8</option><option>12/8</option><option>7/8</option><option>2/2</option></select></label>
+    <label class="f">Tempo <input id="ebBpm" type="number" min="20" max="300" step="1"></label>
+    <button id="ebBars">+ 4 bars</button><button id="ebLead">Lyrics and chords…</button></div>
 </div>
 <div id="barTools" hidden>
   <strong id="btLabel">Bar</strong>
@@ -99,6 +122,30 @@
   <input id="songFilter" type="text" placeholder="Search by title" autocomplete="off">
   <div id="songList"></div>
   <form method="dialog"><button>Cancel</button></form>
+</dialog>
+<dialog id="dlgLead">
+  <h2>Lyrics and chords</h2>
+  <div class="ld"><b>Stilus song:</b> <span id="ldSong">none linked</span> <button id="ldLink">Link a Stilus song…</button></div>
+  <div class="ld"><label>Section <select id="ldSec"></select></label></div>
+  <h3>Lyrics under the notes</h3>
+  <p class="muted">One syllable per note. Put a hyphen inside a word (stand-ing) and use _ to skip a note. Paste your own text or pull it from the song.</p>
+  <textarea id="lyText" rows="6" spellcheck="false"></textarea>
+  <div class="ld"><button id="lyPull">Insert section lyrics</button><button id="lySplit">Split into syllables</button><label>Start at note <input id="lyStart" type="number" min="1" value="1"></label></div>
+  <div id="lyInfo" class="muted"></div>
+  <div class="ld"><button id="lyApply" class="primary">Apply lyrics</button><button id="lyClear">Remove lyrics</button></div>
+  <h3>Chords above the staff</h3>
+  <p class="muted">Fills the chords of the chosen section, in order, onto the bars. You can still click any chord on the staff to change it.</p>
+  <div class="ld"><label>Chords per bar <select id="chPer"><option>1</option><option>2</option><option>4</option></select></label>
+    <label>Start at bar <input id="chStart" type="number" min="1" value="1"></label>
+    <button id="chFill">Fill from section</button><button id="chClear">Remove all chords</button></div>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+<dialog id="dlgChord">
+  <form method="dialog">
+    <h2>Chord symbol</h2>
+    <input id="chordIn" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Gm7 or Bb/D">
+    <div class="ld"><button value="ok" class="primary">OK</button><button value="del">Remove</button><button value="cancel">Cancel</button></div>
+  </form>
 </dialog>
 <dialog id="dlgAbout">
   <h2>Notula</h2>

@@ -140,6 +140,18 @@ export class Player {
     pump();
   }
 
+  // a short note so you hear what you just placed
+  blip(midi) {
+    try {
+      this.ensure();
+      const g = this.ctx.createGain();
+      g.gain.value = this.vol * 0.5;
+      g.connect(this.ctx.destination);
+      this.voice(g, this.ctx.currentTime + 0.01, 0.35, midi);
+      setTimeout(() => { try { g.disconnect(); } catch (e) { /* gone */ } }, 1000);
+    } catch (e) { /* no audio */ }
+  }
+
   currentUnit() {
     const r = this.run;
     if (!r) return null;

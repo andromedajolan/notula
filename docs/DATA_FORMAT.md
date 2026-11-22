@@ -5,10 +5,11 @@ Everything is local. Notula keeps projects in IndexedDB (`notula-db`, stores `pr
 
 ## Version
 
-`schema` is an integer, currently **2**. A reader must refuse files whose `schema` is higher than it knows, and ignore fields it does not know.
+`schema` is an integer, currently **3**. A reader must refuse files whose `schema` is higher than it knows, and ignore fields it does not know.
 
 * **Schema 1**: MIDI projects (`source.kind` `"midi"`). Unchanged. Notula 0.2.0 still opens and saves them as schema 1.
-* **Schema 2** (added in 0.2.0): adds Stilus chord-chart projects (`source.kind` `"stilus"`). Only chart projects use schema 2; a reader that only knows schema 1 will refuse them, which is the intended behaviour.
+* **Schema 2** (0.2.0): adds Stilus chord-chart projects (`source.kind` `"stilus"`).
+* **Schema 3** (0.3.0): adds `chords`, `lyrics`, `edit`, `song`, `settings.bars`, `settings.tab` and the blank score (`source.kind` `"blank"`). Notula 0.3.0 saves every project as schema 3. Schema 1 and 2 files still open: the missing fields are filled with empty defaults and nothing is removed. Older readers refuse schema 3 files, which is intended.
 
 ## MIDI project (schema 1)
 
@@ -63,7 +64,41 @@ Everything is local. Notula keeps projects in IndexedDB (`notula-db`, stores `pr
 | `settings.zoom` | `null` (fit width) or a number (1 = 100%). |
 | `marks` | Per-bar marks keyed by **bar index, counted from 0 in the full file** (so trimming empty bars does not move them). Fields: `repeatStart`, `repeatEnd`, `doubleBar` (booleans), `label` (text, up to 24 characters). |
 
-## Chord chart project (schema 2, from Stilus)
+## Fields added in schema 3 (melody projects: MIDI or blank)
+
+```json
+{
+  "schema": 3,
+  "source": { "kind": "blank", "fileName": "" },
+  "edit": {
+    "notes": [ { "u": 0, "d": 48, "p": 71 } ],
+    "tempos": [ { "u": 0, "bpm": 100 } ],
+    "timeSigs": [ { "u": 0, "num": 4, "den": 4 } ],
+    "base": { "shift": 0, "transpose": 0, "keyOverride": null }
+  },
+  "chords": [ { "u": 0, "t": "Bb" } ],
+  "lyrics": { "text": "I was stand-ing in the rain", "start": 0 },
+  "song": null,
+  "settings": { "feel": "exact", "trim": true, "shift": 0, "transpose": 0, "clef": "auto", "keyOverride": { "tonic": 0, "minor": false }, "page": "letter", "zoom": null, "bars": 8, "tab": { "tuning": "off", "pos": "auto" } }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `source.kind` | `"midi"` (a file, as before), `"stilus"` (chord chart), or `"blank"` (a score typed by hand: no MIDI data, `edit` is required). |
+| `edit` | The notes edited by hand. Absent or `null` means the notation is built from `source.midiBase64` as in schema 1. When present, it replaces the MIDI as the source of the notes (the original MIDI stays in `source.midiBase64` for "Discard my edits"). Editing a MIDI project copies the notes as they appear on the page (quantized, ties merged, shift and transpose applied) and resets `settings.shift` and `settings.transpose` to 0; `edit.base` remembers the old values for going back. |
+| `edit.notes[]` | `u` start and `d` length in score units (48 per quarter note, so a 16th is 12 and an eighth triplet is 16), `p` MIDI pitch 0-127. One note at a time (monophonic). Gaps between notes are rests. Stored before `settings.shift` and `settings.transpose` are applied. |
+| `edit.tempos[]`, `edit.timeSigs[]` | Tempo (`bpm`) and time signature changes at unit `u`. Bars are counted from unit 0. |
+| `chords[]` | Chord symbols above the staff. `u` is the position in score units from the start of the piece (bar positions, not moved by `settings.shift`), `t` the text, written for the stored key: `settings.transpose` is applied when drawing. |
+| `lyrics` | `null` or `{ text, start }`. `text` is split on spaces; a hyphen inside a word splits it into syllables (`stand-ing`), `_` skips a note. One syllable goes under each note that begins a note (ties do not count), starting at the note with index `start` (0 = first note on the page). |
+| `song` | `null`, or a copy of a Stilus song (same shape as `source.song` in chart projects) linked for lyrics and chords. `songRef` holds its id and title. |
+| `settings.feel` | Gains `"exact"`: notes are already on the grid and are neither snapped nor merged. Used automatically when `edit` is present. |
+| `settings.bars` | Show at least this many bars (default 0). Blank scores start with 8. |
+| `settings.tab` | `{ tuning, pos }`. `tuning` is `"off"` or one of `gtr-std`, `gtr-dropd`, `gtr-halfdown`, `gtr-fulldown`, `gtr-dadgad`, `gtr-openg`, `gtr-opend`, `bass-4`, `bass-dropd`, `bass-halfdown`, `bass-5`. `pos` is `"auto"`, `"low"`, `"mid"` or `"high"`. Frets are worked out when drawing and are not stored. |
+
+Tab uses the sounding pitch of each note. The staff above is written at the same pitch (no octave clef), so guitar notation reads an octave lower than it sounds.
+
+## Chord chart project (schema 2 and up, from Stilus)
 
 ```json
 {
@@ -97,6 +132,10 @@ Everything is local. Notula keeps projects in IndexedDB (`notula-db`, stores `pr
 | `marks` | Always `{}` for charts. |
 
 Notula reads Stilus songs, backups (`format: "lyricwriter-backup"`, `v` 1, `songs[]`; songs with `deleted` set are skipped), a bare array of songs, or a single song object (anything with a `sections` array). It never writes back to Stilus.
+
+## MIDI out
+
+"Export MIDI (.mid)" writes a Format 0 file at 480 ppq with the notes as shown on the page (shift and transpose applied, ties joined), the file's tempo and time signature changes, and the key signature. Lyrics, chords and tab are not written.
 
 ## Playback (no stored data)
 

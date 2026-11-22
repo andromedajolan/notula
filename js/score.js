@@ -33,6 +33,8 @@ export const DEFAULT_SETTINGS = {
   transpose: 0,        // semitones
   clef: 'auto',        // auto | treble | bass
   keyOverride: null,   // {tonic, minor} source key
+  minBars: 0,          // show at least this many bars (blank and edited scores)
+  noCollapse: false,   // editing: keep every bar visible (no multi-rests)
 };
 
 export function trackInfo(midi, id) {
@@ -49,10 +51,11 @@ export function buildScore(midi, trackId, settings = {}, marks = {}) {
   const warnings = [];
   if (!track) return { measures: [], key: makeKey(0, false), clef: 'treble', warnings: ['No track selected.'], stats: {} };
   const ppq = midi.ppq;
-  const strict = s.feel !== 'natural';
-  const S = strict ? 12 : 6;       // straight grid step
+  const exact = s.feel === 'exact';   // hand-entered notes: already on the grid, nothing is snapped or merged
+  const strict = s.feel !== 'natural' && !exact;
+  const S = strict ? 12 : exact ? 3 : 6;       // straight grid step
   const T = strict ? 16 : 8;       // triplet grid step
-  const gapMerge = strict ? 12 : 6;
+  const gapMerge = strict ? 12 : exact ? 0 : 6;
   const tr = s.transpose | 0;
   const shiftU = (s.shift | 0) * 12;
 
@@ -73,7 +76,7 @@ export function buildScore(midi, trackId, settings = {}, marks = {}) {
   const mono = [];
   for (const n of raw) {
     const last = mono[mono.length - 1];
-    if (last && n.on - last.on <= 3) { dropped++; continue; }
+    if (last && n.on - last.on <= (exact ? 0 : 3)) { dropped++; continue; }
     mono.push({ ...n });
   }
   for (let i = 0; i < mono.length - 1; i++) {
@@ -114,8 +117,16 @@ export function buildScore(midi, trackId, settings = {}, marks = {}) {
     }
     if (e12 > 4 && e16 < e12 * 0.55) trip.add(b);
   }
+  if (exact) {
+    // a beat is a triplet beat when something starts or ends off the 16th grid but on the triplet grid
+    trip.clear();
+    for (const n of mono) for (const x of [n.on, n.off]) {
+      const b = Math.floor(x / U + 1e-9), r = Math.round(x - b * U);
+      if (r % 12 !== 0 && r % 8 === 0) trip.add(b);
+    }
+  }
   const stepAt = (u) => (trip.has(Math.floor(u / U + 1e-9)) ? T : S);
-  const snap = (u) => { const st = stepAt(u); return Math.round(u / st) * st; };
+  const snap = (u) => { if (exact) return Math.round(u); const st = stepAt(u); return Math.round(u / st) * st; };
 
   // 4. quantize
   let q = [];
@@ -151,7 +162,7 @@ export function buildScore(midi, trackId, settings = {}, marks = {}) {
   while (ti < tsEv.length && tsEv[ti].u <= 1e-6) { ts = { num: tsEv[ti].num, den: tsEv[ti].den }; ti++; }
   const bars = [];
   let u = 0, prevTs = null;
-  while ((u < lastEnd - 1e-6 || bars.length === 0) && bars.length < 1500) {
+  while ((u < lastEnd - 1e-6 || bars.length === 0 || bars.length < (s.minBars | 0)) && bars.length < 1500) {
     while (ti < tsEv.length && tsEv[ti].u <= u + 1e-6) { ts = { num: tsEv[ti].num, den: tsEv[ti].den }; ti++; }
     const len = ts.num * 192 / ts.den;
     const changed = !prevTs || prevTs.num !== ts.num || prevTs.den !== ts.den;
@@ -260,7 +271,7 @@ export function buildScore(midi, trackId, settings = {}, marks = {}) {
     const b = keptSrc[i];
     const m = { ...b, num: b.idx + 1, marks: marks[b.idx] || null, showTs: i === 0 || b.tsChange };
     const plain = (x) => x.empty && !(marks[x.idx]) && x.tempo == null && !x.tsChange;
-    if (m.empty && !m.marks && (i === 0 || true)) {
+    if (!s.noCollapse && m.empty && !m.marks && (i === 0 || true)) {
       let n = 1;
       while (i + n < keptSrc.length && plain(keptSrc[i + n]) && keptSrc[i + n].ts.num === b.ts.num && keptSrc[i + n].ts.den === b.ts.den) n++;
       if (n >= 2) { m.multi = n; i += n - 1; }

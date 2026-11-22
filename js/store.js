@@ -68,11 +68,11 @@ export async function loadProject(id) {
     let r = await wrap(tx.objectStore('projects').get(id));
     let ls = null;
     try { const raw = localStorage.getItem(LS + id); if (raw) { const x = JSON.parse(raw); if (validProject(x)) ls = x; } } catch (e) { /* none */ }
-    if (ls && (!validProject(r) || (ls.updated || '') > (r.updated || ''))) return ls;
+    if (ls && (!validProject(r) || (ls.updated || '') > (r.updated || ''))) return upgrade(ls);
     if (!validProject(r)) r = await wrap(tx.objectStore('prev').get(id));
-    if (validProject(r)) return r;
+    if (validProject(r)) return upgrade(r);
   } catch (e) { /* fall through */ }
-  try { const raw = localStorage.getItem(LS + id); if (raw) { const r = JSON.parse(raw); if (validProject(r)) return r; } } catch (e) { /* none */ }
+  try { const raw = localStorage.getItem(LS + id); if (raw) { const r = JSON.parse(raw); if (validProject(r)) return upgrade(r); } } catch (e) { /* none */ }
   return null;
 }
 
@@ -102,10 +102,24 @@ export async function deleteProject(id) {
 
 export function validProject(p) {
   return !!(p && p.format === 'notula-project' && typeof p.schema === 'number' && p.id && p.source
-    && (p.source.midiBase64 || (p.source.kind === 'stilus' && p.source.song && Array.isArray(p.source.song.sections))));
+    && (p.source.midiBase64 || (p.source.kind === 'blank' && p.edit && Array.isArray(p.edit.notes))
+      || (p.source.kind === 'stilus' && p.source.song && Array.isArray(p.source.song.sections))));
 }
 
-export const SCHEMA_MAX = 2;
+export const SCHEMA_MAX = 3;
+// Bring a project from any older schema up to the current one (adds the stage 3 fields; never removes anything).
+export function upgrade(p) {
+  p.schema = SCHEMA_MAX;
+  p.chords = Array.isArray(p.chords) ? p.chords : [];
+  p.lyrics = p.lyrics && typeof p.lyrics.text === 'string' ? p.lyrics : null;
+  p.edit = p.edit && Array.isArray(p.edit.notes) ? p.edit : null;
+  p.song = p.song && Array.isArray(p.song.sections) ? p.song : null;
+  if (p.settings && p.source && p.source.kind !== 'stilus') {
+    if (!Number.isFinite(p.settings.bars)) p.settings.bars = 0;
+    p.settings.tab = Object.assign({ tuning: 'off', pos: 'auto' }, p.settings.tab || {});
+  }
+  return p;
+}
 export const CHART_DEFAULTS = { view: 'both', columns: 1 };
 
 export function newId() { return 'np_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -113,13 +127,13 @@ export function newId() { return 'np_' + Date.now().toString(36) + Math.random()
 export function newProject({ title, fileName, midiBase64, trackIndex, version }) {
   const now = new Date().toISOString();
   return {
-    format: 'notula-project', schema: 1, id: newId(),
+    format: 'notula-project', schema: 3, id: newId(),
     created: now, updated: now, app: { name: 'Notula', version },
     meta: { title: title || 'Untitled', artist: 'Andromeda Dunn', part: '' },
     songRef: null,
     source: { kind: 'midi', fileName: fileName || '', midiBase64, trackIndex: trackIndex || 0 },
-    settings: { feel: 'strict', trim: true, shift: 0, transpose: 0, clef: 'auto', keyOverride: null, page: 'letter', zoom: null },
-    marks: {},
+    settings: { feel: 'strict', trim: true, shift: 0, transpose: 0, clef: 'auto', keyOverride: null, page: 'letter', zoom: null, bars: 0, tab: { tuning: 'off', pos: 'auto' } },
+    marks: {}, chords: [], lyrics: null, edit: null, song: null,
   };
 }
 
@@ -127,13 +141,27 @@ export function newProject({ title, fileName, midiBase64, trackIndex, version })
 export function newStilusProject({ song, fileName, version }) {
   const now = new Date().toISOString();
   return {
-    format: 'notula-project', schema: 2, id: newId(),
+    format: 'notula-project', schema: 3, id: newId(),
     created: now, updated: now, app: { name: 'Notula', version },
     meta: { title: song.title || 'Untitled', artist: 'Andromeda Dunn', part: '' },
     songRef: { id: song.id, title: song.title || '' },
     source: { kind: 'stilus', fileName: fileName || '', song },
     settings: { transpose: 0, page: 'letter', zoom: null, chart: { ...CHART_DEFAULTS } },
-    marks: {},
+    marks: {}, chords: [], lyrics: null, edit: null, song: null,
+  };
+}
+
+// A blank score you write by hand (optionally linked to a Stilus song for its lyrics and chords).
+export function newMelodyProject({ title, edit, song, keyOverride, version }) {
+  const now = new Date().toISOString();
+  return {
+    format: 'notula-project', schema: 3, id: newId(),
+    created: now, updated: now, app: { name: 'Notula', version },
+    meta: { title: title || 'Untitled', artist: 'Andromeda Dunn', part: '' },
+    songRef: song ? { id: song.id, title: song.title || '' } : null,
+    source: { kind: 'blank', fileName: '' },
+    settings: { feel: 'exact', trim: true, shift: 0, transpose: 0, clef: 'auto', keyOverride: keyOverride || { tonic: 0, minor: false }, page: 'letter', zoom: null, bars: 8, tab: { tuning: 'off', pos: 'auto' } },
+    marks: {}, chords: [], lyrics: null, edit, song: song || null,
   };
 }
 
@@ -142,7 +170,9 @@ export function importProjectObject(obj, existingIds) {
   if (!obj || obj.format !== 'notula-project') throw new Error('This is not a Notula project file.');
   if (typeof obj.schema !== 'number' || obj.schema > SCHEMA_MAX) throw new Error('This project was saved by a newer version of Notula.');
   const isChart = obj.source && obj.source.kind === 'stilus';
-  if (!obj.source || (!isChart && !obj.source.midiBase64)) throw new Error('The project has no MIDI data.');
+  const isBlank = obj.source && obj.source.kind === 'blank';
+  if (!obj.source || (!isChart && !isBlank && !obj.source.midiBase64)) throw new Error('The project has no MIDI data.');
+  if (isBlank && !(obj.edit && Array.isArray(obj.edit.notes))) throw new Error('The project has no notes.');
   if (isChart && !(obj.source.song && Array.isArray(obj.source.song.sections))) throw new Error('The project has no Stilus song.');
   const p = JSON.parse(JSON.stringify(obj));
   p.meta = Object.assign({ title: 'Untitled', artist: '', part: '' }, p.meta || {});
@@ -154,6 +184,7 @@ export function importProjectObject(obj, existingIds) {
   }
   p.marks = p.marks || {};
   p.songRef = p.songRef || null;
+  upgrade(p);
   if (!p.id || (existingIds && existingIds.has(p.id))) {
     if (p.id) p.meta.title += ' (imported)';
     p.id = newId();
