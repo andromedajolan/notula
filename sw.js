@@ -1,6 +1,6 @@
 // Notula service worker. Cache-first for its own files only.
 // Keep VERSION in step with APP_VERSION in js/main.js and "version" in suite-app.json.
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const CACHE = 'notula-cache-' + VERSION;
 const PREFIX = 'notula-cache-';
 
@@ -10,6 +10,8 @@ const CORE = [
   'js/chords.js',
   'js/chart.js',
   'js/play.js',
+  'js/edit.js',
+  'js/tab.js',
 ];
 const EXTRA = [
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/favicon-32.png',
